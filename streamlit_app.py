@@ -1,16 +1,19 @@
 
 # streamlit_app.py
 
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.vectorstores import FAISS
+import os
+import openai
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain.vectorstores import Qdrant
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.chains import RetrievalQA
-from langchain_openai import ChatOpenAI
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, VectorParams
 import streamlit as st
 
-import openai
-openai.api_key = "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"
+# Set OpenAI API Key from Streamlit secrets
+openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 st.title("Housing Disrepair QA System")
 uploaded_file = st.file_uploader("Upload a PDF Survey Report", type="pdf")
@@ -25,13 +28,24 @@ if uploaded_file:
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
     splits = splitter.split_documents(docs)
-    splits = splits[:20]  # Limit to avoid overload
 
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    vectordb = FAISS.from_documents(splits, embeddings)
+    embeddings = OpenAIEmbeddings()
+    client = QdrantClient(path="./qdrant_local")
+
+    client.recreate_collection(
+        collection_name="housing_reports",
+        vectors_config=VectorParams(size=1536, distance=Distance.COSINE)
+    )
+
+    vectordb = Qdrant.from_documents(
+        documents=splits,
+        embedding=embeddings,
+        collection_name="housing_reports",
+        client=client,
+    )
 
     retriever = vectordb.as_retriever()
-    llm = ChatOpenAI(model_name="gpt-3.5-turbo")
+    llm = ChatOpenAI(model_name="gpt-4-turbo")
     qa_chain = RetrievalQA.from_chain_type(
         llm=llm,
         retriever=retriever,
