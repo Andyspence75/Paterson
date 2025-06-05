@@ -1,7 +1,9 @@
+
 streamlit
 langchain
-openai
+langchain-community
+langchain-openai
 faiss-cpu
-python-pptx
-unstructured
-pandas
+sentence-transformers
+openai
+spacy
