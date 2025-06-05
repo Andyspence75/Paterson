@@ -3,17 +3,16 @@
 
 import os
 import openai
-from langchain.embeddings import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain.vectorstores import Qdrant
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.document_loaders import UnstructuredPDFLoader
 from langchain.chains import RetrievalQA
-from langchain.chat_models import ChatOpenAI
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
 import streamlit as st
 
-# Set OpenAI API Key
+# Set OpenAI API Key from Streamlit secrets
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 st.title("Housing Disrepair QA System")
