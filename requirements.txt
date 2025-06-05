@@ -1,8 +1,9 @@
-
-langchain
-langchain-openai
-langchain-community
 streamlit
+langchain
+langchain-community
+langchain-openai
+openai
+qdrant-client
+unstructured
+pdfminer.six
 sentence-transformers
-faiss-cpu
-PyPDF2
