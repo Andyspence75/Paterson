@@ -1,15 +1,12 @@
 
 # streamlit_app.py
 
-import os
 from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.vectorstores import Qdrant
+from langchain.vectorstores import FAISS
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.chains import RetrievalQA
 from langchain_openai import ChatOpenAI
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams
 import streamlit as st
 
 st.title("Housing Disrepair QA System")
@@ -28,19 +25,7 @@ if uploaded_file:
     splits = splits[:20]  # Limit to avoid overload
 
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    client = QdrantClient(path="./qdrant_local")
-
-    client.recreate_collection(
-        collection_name="housing_reports",
-        vectors_config=VectorParams(size=384, distance=Distance.COSINE)
-    )
-
-    vectordb = Qdrant.from_documents(
-        documents=splits,
-        embedding=embeddings,
-        collection_name="housing_reports",
-        client=client,
-    )
+    vectordb = FAISS.from_documents(splits, embeddings)
 
     retriever = vectordb.as_retriever()
     llm = ChatOpenAI(model_name="gpt-4-turbo")
