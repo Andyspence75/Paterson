@@ -10,7 +10,7 @@ from langchain_openai import ChatOpenAI
 import streamlit as st
 
 import openai
-openai.api_key = "
+openai.api_key = "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"
 # streamlit_app.py
 
 from langchain.embeddings import HuggingFaceEmbeddings
