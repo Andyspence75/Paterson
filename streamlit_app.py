@@ -2,18 +2,15 @@
 # streamlit_app.py
 
 import os
-import openai
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.vectorstores import Qdrant
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.chains import RetrievalQA
+from langchain_openai import ChatOpenAI
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
 import streamlit as st
-
-# Set OpenAI API Key from Streamlit secrets
-openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 st.title("Housing Disrepair QA System")
 uploaded_file = st.file_uploader("Upload a PDF Survey Report", type="pdf")
@@ -28,13 +25,14 @@ if uploaded_file:
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
     splits = splitter.split_documents(docs)
+    splits = splits[:20]  # Limit to avoid overload
 
-    embeddings = OpenAIEmbeddings()
+    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     client = QdrantClient(path="./qdrant_local")
 
     client.recreate_collection(
         collection_name="housing_reports",
-        vectors_config=VectorParams(size=1536, distance=Distance.COSINE)
+        vectors_config=VectorParams(size=384, distance=Distance.COSINE)
     )
 
     vectordb = Qdrant.from_documents(
