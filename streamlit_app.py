@@ -6,7 +6,7 @@ import openai
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain.vectorstores import Qdrant
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.document_loaders import UnstructuredPDFLoader
+from langchain_community.document_loaders import PyPDFLoader
 from langchain.chains import RetrievalQA
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
@@ -23,7 +23,7 @@ if uploaded_file:
     with open("temp.pdf", "wb") as f:
         f.write(uploaded_file.read())
 
-    loader = UnstructuredPDFLoader("temp.pdf")
+    loader = PyPDFLoader("temp.pdf")
     docs = loader.load()
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
