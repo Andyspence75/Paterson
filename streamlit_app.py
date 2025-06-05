@@ -1,22 +1,43 @@
 
 # streamlit_app.py
 
-import os
-import openai
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain.vectorstores import Qdrant
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.vectorstores import FAISS
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.chains import RetrievalQA
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams
+from langchain_openai import ChatOpenAI
 import streamlit as st
-
-# Set OpenAI API Key from Streamlit secrets
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+import openai
 
 st.title("Housing Disrepair QA System")
+
+# Secure input for OpenAI API Key
+openai_api_key = st.text_input("Enter your OpenAI API Key:", type="password")
+if not openai_api_key:
+    st.warning("Please enter your OpenAI API key to proceed.")
+    st.stop()
+openai.api_key = openai_api_key
+
 uploaded_file = st.file_uploader("Upload a PDF Survey Report", type="pdf")
+
+# Initialize session history
+if "history" not in st.session_state:
+    st.session_state.history = []
+
+# Predefined checks for common report requirements
+required_sections = [
+    "mold", "damp", "heating", "insulation", "ventilation",
+    "electrical safety", "gas safety", "structure", "roof", "windows"
+]
+
+def validate_sections(text):
+    missing = []
+    lower_text = text.lower()
+    for item in required_sections:
+        if item not in lower_text:
+            missing.append(item)
+    return missing
 
 if uploaded_file:
     st.info("Processing document...")
@@ -26,26 +47,25 @@ if uploaded_file:
     loader = PyPDFLoader("temp.pdf")
     docs = loader.load()
 
+    # Combine all pages for validation
+    full_text = "\n".join([doc.page_content for doc in docs])
+    missing = validate_sections(full_text)
+
+    if missing:
+        st.warning(f"The following key sections were NOT found: {', '.join(missing)}")
+    else:
+        st.success("All key sections are present in the report!")
+
+    # Vectorization
     splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
     splits = splitter.split_documents(docs)
+    splits = splits[:20]
 
-    embeddings = OpenAIEmbeddings()
-    client = QdrantClient(path="./qdrant_local")
-
-    client.recreate_collection(
-        collection_name="housing_reports",
-        vectors_config=VectorParams(size=1536, distance=Distance.COSINE)
-    )
-
-    vectordb = Qdrant.from_documents(
-        documents=splits,
-        embedding=embeddings,
-        collection_name="housing_reports",
-        client=client,
-    )
+    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    vectordb = FAISS.from_documents(splits, embeddings)
 
     retriever = vectordb.as_retriever()
-    llm = ChatOpenAI(model_name="gpt-4-turbo")
+    llm = ChatOpenAI(model_name="gpt-3.5-turbo")
     qa_chain = RetrievalQA.from_chain_type(
         llm=llm,
         retriever=retriever,
@@ -55,8 +75,14 @@ if uploaded_file:
     question = st.text_input("Ask about the report or housing standards:")
     if question:
         response = qa_chain({"query": question})
+        st.session_state.history.append({"q": question, "a": response['result']})
         st.write(response['result'])
 
         with st.expander("See referenced sections"):
             for doc in response['source_documents']:
                 st.markdown(doc.page_content[:300] + "...")
+
+if st.session_state.history:
+    with st.expander("Query History"):
+        for entry in reversed(st.session_state.history):
+            st.markdown(f"**Q:** {entry['q']}\n**A:** {entry['a']}")
