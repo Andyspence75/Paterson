@@ -9,6 +9,9 @@ from langchain.chains import RetrievalQA
 from langchain_openai import ChatOpenAI
 import streamlit as st
 
+import openai
+openai.api_key = "sk-REPLACE_WITH_YOUR_KEY"
+
 st.title("Housing Disrepair QA System")
 uploaded_file = st.file_uploader("Upload a PDF Survey Report", type="pdf")
 
