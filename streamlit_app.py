@@ -79,7 +79,10 @@ if uploaded_file:
     question = st.text_input("Ask about the report or housing standards:")
     if question:
         st.write(f"Running query: {question}")
-        response = qa_chain({"input": question})
+        
+    st.write(f"Expected input keys: {qa_chain.input_keys}")
+    response = qa_chain({list(qa_chain.input_keys)[0]: question})
+    
         st.session_state.history.append({"q": question, "a": response['result']})
         st.write(response['result'])
 
