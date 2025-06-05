@@ -28,7 +28,7 @@ if uploaded_file:
     vectordb = FAISS.from_documents(splits, embeddings)
 
     retriever = vectordb.as_retriever()
-    llm = ChatOpenAI(model_name="gpt-4-turbo")
+    llm = ChatOpenAI(model_name="gpt-3.5-turbo")
     qa_chain = RetrievalQA.from_chain_type(
         llm=llm,
         retriever=retriever,
