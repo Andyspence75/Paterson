@@ -81,7 +81,18 @@ if uploaded_file:
         st.write(f"Running query: {question}")
         
     st.write(f"Expected input keys: {qa_chain.input_keys}")
-    response = qa_chain({list(qa_chain.input_keys)[0]: question})
+    
+    st.write("🔍 Debug Info")
+    st.write("Chain type:", type(qa_chain))
+    st.write("Expected input keys:", qa_chain.input_keys)
+
+    input_keys = list(qa_chain.input_keys)
+    if len(input_keys) != 1:
+        st.error(f"Unexpected number of input keys: {input_keys}")
+    else:
+        response = qa_chain({input_keys[0]: question})
+        st.write("✅ Query complete.")
+    
     
         st.session_state.history.append({"q": question, "a": response['result']})
         st.write(response['result'])
