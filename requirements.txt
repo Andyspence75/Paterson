@@ -1,9 +1,7 @@
 streamlit
 langchain
-langchain-community
-langchain-openai
 openai
-qdrant-client
+faiss-cpu
+python-pptx
 unstructured
-pdfminer.six
-sentence-transformers
+pandas

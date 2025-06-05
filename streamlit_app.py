@@ -1,135 +1,80 @@
 
 import streamlit as st
-import os
-import tempfile
-import json
 import sqlite3
-import pandas as pd
-from datetime import datetime
+import os
 from langchain_community.document_loaders import PyPDFLoader, UnstructuredPowerPointLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import FAISS
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.chains import RetrievalQA
 from langchain_openai import ChatOpenAI
-from langchain.docstore.document import Document
 
-# --- Database Setup ---
-def init_db():
-    conn = sqlite3.connect("qa_app.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            username TEXT PRIMARY KEY,
-            is_admin INTEGER DEFAULT 0
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS qa_log (
-            username TEXT,
-            question TEXT,
-            answer TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+# Database setup
+conn = sqlite3.connect('users.db', check_same_thread=False)
+c = conn.cursor()
+c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT, role TEXT)''')
+conn.commit()
+
+# Auth setup
+st.sidebar.header("Login")
+username = st.sidebar.text_input("Username")
+role = st.sidebar.selectbox("Role", ["user", "admin"])
+if st.sidebar.button("Login"):
+    c.execute("INSERT INTO users VALUES (?, ?)", (username, role))
     conn.commit()
-    conn.close()
+    st.session_state['username'] = username
+    st.session_state['role'] = role
+    st.sidebar.success(f"Logged in as {username} ({role})")
 
-def log_qa(username, question, answer):
-    conn = sqlite3.connect("qa_app.db")
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO qa_log (username, question, answer) VALUES (?, ?, ?)",
-                   (username, question, answer))
-    conn.commit()
-    conn.close()
+if 'username' not in st.session_state:
+    st.stop()
 
-# --- User Authentication ---
-init_db()
-username = st.text_input("Enter your username to begin:", key="user_input")
-is_admin = False
+# Main interface
+st.title("RAG Housing Support App")
+general_query = st.text_input("Ask a general question (no upload required):")
+if general_query:
+    st.info("Querying general knowledge model...")
+    llm = ChatOpenAI(model_name="gpt-3.5-turbo")
+    response = llm.invoke(general_query)
+    st.write(response)
 
-if username:
-    conn = sqlite3.connect("qa_app.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT is_admin FROM users WHERE username = ?", (username,))
-    result = cursor.fetchone()
-    if result is None:
-        cursor.execute("INSERT INTO users (username) VALUES (?)", (username,))
-        conn.commit()
-    else:
-        is_admin = result[0] == 1
-    conn.close()
-    st.success(f"Welcome {username} {'(Admin)' if is_admin else ''}")
+uploaded_files = st.file_uploader("Upload PDFs or PPTX reports", type=["pdf", "pptx"], accept_multiple_files=True)
+qa_json = st.file_uploader("Optional: Upload Q&A JSON", type=["json"])
 
-    # --- Upload Section ---
-    st.header("Upload Training Data")
-    uploaded_files = st.file_uploader("Upload PDF or PPTX files", type=["pdf", "pptx"], accept_multiple_files=True)
-    qa_file = st.file_uploader("Optional: Upload Q&A pairs in JSON or CSV", type=["json", "csv"])
-
-    persist_dir = "faiss_index"
-    os.makedirs(persist_dir, exist_ok=True)
+if uploaded_files:
+    st.info("Processing uploaded documents...")
     docs = []
-
-    if uploaded_files:
-        st.info("Processing uploaded documents...")
-        for file in uploaded_files:
-            with tempfile.NamedTemporaryFile(delete=False, suffix="." + file.name.split('.')[-1]) as tmp_file:
-                tmp_file.write(file.read())
-                if file.name.endswith(".pdf"):
-                    loader = PyPDFLoader(tmp_file.name)
-                elif file.name.endswith(".pptx"):
-                    loader = UnstructuredPowerPointLoader(tmp_file.name)
-                docs.extend(loader.load())
-
-    if qa_file:
-        st.info("Loading Q&A pairs...")
-        if qa_file.name.endswith(".json"):
-            qa_data = json.load(qa_file)
+    for file in uploaded_files:
+        with open(file.name, "wb") as f:
+            f.write(file.getbuffer())
+        if file.name.endswith(".pdf"):
+            loader = PyPDFLoader(file.name)
         else:
-            qa_data = pd.read_csv(qa_file).to_dict(orient="records")
-        for pair in qa_data:
-            question = pair.get("question", "")
-            answer = pair.get("answer", "")
-            docs.append(Document(page_content=f"Q: {question}\nA: {answer}", metadata={"source": "qa_upload"}))
+            loader = UnstructuredPowerPointLoader(file.name)
+        docs.extend(loader.load())
 
-    if docs:
-        st.success(f"Ingested {len(docs)} items for training.")
-        splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
-        splits = splitter.split_documents(docs)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+    splits = splitter.split_documents(docs)
 
-        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-        vectordb = FAISS.from_documents(splits, embedding=embeddings)
-        vectordb.save_local(persist_dir)
-    else:
-        try:
-            vectordb = FAISS.load_local(persist_dir, embeddings=HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2"))
-            st.info("Loaded previously saved data.")
-        except:
-            vectordb = None
-            st.warning("No data found. Please upload documents.")
+    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    vectordb = FAISS.from_documents(splits, embeddings)
 
-    # --- Query Interface ---
-    st.header("Ask a Question")
-    general_query = st.text_input("You can ask a general question below:")
+    retriever = vectordb.as_retriever()
+    llm = ChatOpenAI(model_name="gpt-3.5-turbo")
+    qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=retriever, return_source_documents=True)
 
-    if vectordb:
-        retriever = vectordb.as_retriever()
-        llm = ChatOpenAI(model_name="gpt-3.5-turbo")
-        qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=retriever, return_source_documents=True)
+    question = st.text_input("Ask a question based on your uploads:")
+    if question:
+        result = qa_chain.invoke({"query": question})
+        st.write(result['result'])
+        with st.expander("Sources"):
+            for doc in result['source_documents']:
+                st.markdown(doc.page_content[:300] + "...")
 
-        if general_query:
-            response = qa_chain({"query": general_query})
-            st.markdown(f"**Answer:** {response['result']}")
-            with st.expander("See source text"):
-                for doc in response['source_documents']:
-                    st.markdown(doc.page_content[:500] + "...")
-            log_qa(username, general_query, response["result"])
-
-    # --- Admin Panel ---
-    if is_admin:
-        st.header("Admin Panel")
-        if st.button("Show Q&A Logs"):
-            conn = sqlite3.connect("qa_app.db")
-            df = pd.read_sql_query("SELECT * FROM qa_log ORDER BY timestamp DESC", conn)
-            st.dataframe(df)
-            conn.close()
+# Admin tools
+if st.session_state['role'] == "admin":
+    st.sidebar.subheader("Admin Panel")
+    if st.sidebar.button("View Users"):
+        st.subheader("Registered Users")
+        users = c.execute("SELECT * FROM users").fetchall()
+        st.table(users)
