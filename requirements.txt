@@ -7,6 +7,8 @@ faiss-cpu
 openai
 unstructured
 pdfminer.six
+python-docx
+pptx
 numpy==1.24.4
 spacy==3.7.2
 thinc==8.2.2
