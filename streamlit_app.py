@@ -8,15 +8,25 @@ from langchain_community.document_loaders import (
     UnstructuredPowerPointLoader,
 )
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_community.vectorstores import Qdrant
+from qdrant_client import QdrantClient
 from redactor import redact_text
 
 st.set_page_config(page_title="Housing Disrepair QA", layout="wide")
-st.title("Housing Disrepair QA System")
+st.title("Housing Disrepair QA System (Qdrant Cloud)")
 
-FAISS_INDEX_PATH = "vectorstore.index"
+QDRANT_COLLECTION = "housing_rag_collection"
+
+# Qdrant Cloud credentials (set these as Streamlit secrets!)
+QDRANT_URL = st.secrets["QDRANT_URL"]
+QDRANT_API_KEY = st.secrets["QDRANT_API_KEY"]
+
+qdrant_client = QdrantClient(
+    url=QDRANT_URL,
+    api_key=QDRANT_API_KEY,
+)
 
 def get_loader_for_file(filename):
     ext = filename.lower().split(".")[-1]
@@ -31,23 +41,19 @@ def get_loader_for_file(filename):
     else:
         return None
 
-def load_vectorstore():
-    if os.path.exists(FAISS_INDEX_PATH):
-        try:
-            return FAISS.load_local(FAISS_INDEX_PATH, OpenAIEmbeddings(), allow_dangerous_deserialization=True)
-        except Exception as e:
-            st.warning(f"Failed to load previous vectorstore: {e}")
-            return None
-    return None
-
-def save_vectorstore(vectorstore):
+def get_vectorstore():
     try:
-        vectorstore.save_local(FAISS_INDEX_PATH)
+        return Qdrant(
+            client=qdrant_client,
+            collection_name=QDRANT_COLLECTION,
+            embeddings=OpenAIEmbeddings(),
+        )
     except Exception as e:
-        st.error(f"Could not save vectorstore: {e}")
+        st.warning(f"Could not connect to collection: {e}")
+        return None
 
 if "vectorstore" not in st.session_state:
-    st.session_state.vectorstore = load_vectorstore()
+    st.session_state.vectorstore = get_vectorstore()
 
 with st.sidebar:
     st.header("Document Upload")
@@ -76,10 +82,14 @@ with st.sidebar:
             splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
             splits = splitter.split_documents(all_docs)
             embeddings = OpenAIEmbeddings()
-            vectordb = FAISS.from_documents(splits, embeddings)
-            st.session_state.vectorstore = vectordb
-            save_vectorstore(vectordb)
-            st.success("Documents processed and indexed. (Saved for future use!)")
+            vectorstore = Qdrant.from_documents(
+                splits,
+                embeddings,
+                client=qdrant_client,
+                collection_name=QDRANT_COLLECTION
+            )
+            st.session_state.vectorstore = vectorstore
+            st.success("Documents processed and indexed (Qdrant Cloud, persistent!).")
 
 if st.session_state.vectorstore:
     llm = ChatOpenAI(model_name="gpt-3.5-turbo")

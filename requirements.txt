@@ -3,7 +3,7 @@ streamlit
 langchain
 langchain-openai
 langchain-community
-faiss-cpu
+qdrant-client
 openai
 unstructured
 pdfminer.six
